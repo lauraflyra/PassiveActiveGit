@@ -133,6 +133,10 @@ def add_sacc_val_id(filtered_raw, corpus_data):
     where zero correspond to fixation and a one correspond to a saccade, 'identifier' and 'invalid'.
 
     """
+    pd.options.mode.chained_assignment = None  # default='warn'
+
+    inds = pd.isnull(corpus_data.sacno)
+    corpus_data.loc[inds,"sacinvalid"]=0
 
     invalid_sacfix = ((corpus_data.fixinvalid + corpus_data.sacinvalid) >= 1).astype(int)
 
