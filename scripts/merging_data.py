@@ -119,6 +119,7 @@ def associate_trial_info(filtered_raw, intervals, corpus_data):
 
     return filtered_raw, trial_durations
 
+
 def add_sacc_val_id(filtered_raw, corpus_data):
     """
     By comparing time stamps with the corpus_data, we get which time stamps corresponds
@@ -133,10 +134,11 @@ def add_sacc_val_id(filtered_raw, corpus_data):
     where zero correspond to fixation and a one correspond to a saccade, 'identifier' and 'invalid'.
 
     """
+
     pd.options.mode.chained_assignment = None  # default='warn'
 
     inds = pd.isnull(corpus_data.sacno)
-    corpus_data.loc[inds,"sacinvalid"]=0
+    corpus_data.loc[inds, "sacinvalid"] = 0
 
     invalid_sacfix = ((corpus_data.fixinvalid + corpus_data.sacinvalid) >= 1).astype(int)
 
@@ -145,10 +147,9 @@ def add_sacc_val_id(filtered_raw, corpus_data):
     invalid = np.zeros(len(filtered_raw.time), dtype=int)
 
     try:
-        corpus_data.insert(10, "invalid_sacfix", invalid_sacfix)
         filtered_raw.insert(0, "identifier", identifier)
         filtered_raw.insert(7, "is_saccade", is_saccade)
-        filtered_raw.insert(6, "invalid", invalid)
+        filtered_raw.insert(7, "invalid", invalid)
     except:
         pass
 
@@ -157,6 +158,20 @@ def add_sacc_val_id(filtered_raw, corpus_data):
     subject = np.unique(corpus_data.subject)[0]
     for image in np.unique(filtered_raw.imageno):
         imagestart = filtered_raw[filtered_raw.imageno == image].time.iloc[0]
+
+        # First we just try to get the invalid saccades
+        corpus_invalid = corpus_data[invalid_sacfix & (corpus_data.imageno == image)]
+        invalid_sac_no = np.unique(corpus_invalid.sacno[corpus_invalid.sacno.notnull()])
+
+        for insac in invalid_sac_no:
+            invalidity = corpus_invalid[corpus_invalid.sacno == insac].sacinvalid
+            in_saconset = corpus_invalid[corpus_invalid.sacno == insac].saconset
+            in_sacoffset = corpus_invalid[corpus_invalid.sacno == insac].sacoffset
+
+            filtered_raw.loc[(filtered_raw.time >= imagestart + int(in_saconset)) &
+                             (filtered_raw.time <= imagestart + int(in_sacoffset)), "invalid"] = int(invalidity)
+
+        # Second we get invalid fixations + introduce the ids
         trialno = corpus_data[corpus_data.imageno == image].trialno.iloc[0]
         fix_nbs = corpus_data[(corpus_data.imageno == image)].fixno
         for count, fix in enumerate(fix_nbs):
@@ -171,7 +186,7 @@ def add_sacc_val_id(filtered_raw, corpus_data):
                 sacoffset = c_temp[np.logical_not(c_temp.fixno.notnull())].sacoffset.iloc[0]
                 if saconset == 1:
                     saconset = 0
-                invalidity = 1
+                invalidity = c_temp[np.logical_not(c_temp.fixno.notnull())].sacinvalid.iloc[0]
                 ident = "" + str(subject).zfill(3) + str(trialno).zfill(3) + str(int(sacno)).zfill(2) + ""
                 filtered_raw.loc[(filtered_raw.time >= imagestart + saconset) &
                                  (filtered_raw.time <= imagestart + sacoffset), "identifier"] = ident
@@ -180,15 +195,20 @@ def add_sacc_val_id(filtered_raw, corpus_data):
 
 
             else:
-                invalidity = corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].invalid_sacfix
+                # This else handles assigning saccades and invalidity
+                invalidity = int(corpus_data[(corpus_data.imageno == image) & (corpus_p1.fixno == fix)].fixinvalid)
                 ident = "" + str(subject).zfill(3) + str(trialno).zfill(3) + str(int(fix)).zfill(2) + ""
                 fixonset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixonset)
+                # necessary if because in the corpus data their time starts at 1.
                 if fixonset == 1:
                     fixonset = 0
                 fixoffset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixoffset)
                 filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
                                  (filtered_raw.time <= imagestart + fixoffset), "is_saccade"] = 0
+                filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
+                                 (filtered_raw.time <= imagestart + fixoffset), "invalid"] = invalidity
 
+                # This handles assigning ids
                 if count < len(corpus_data[(corpus_data.imageno == image)].fixno) - 1:
                     next_fix = int(corpus_data[(corpus_data.imageno == image)].fixno.iloc[count + 1])
                     next_fixonset = int(
@@ -196,16 +216,10 @@ def add_sacc_val_id(filtered_raw, corpus_data):
                     filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
                                      (filtered_raw.time < imagestart + next_fixonset), "identifier"] = ident
 
-                    filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
-                                     (filtered_raw.time < imagestart + next_fixonset), "invalid"] = int(
-                        invalidity.iloc[0])
-
 
                 else:
                     filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
                                      (filtered_raw.time <= imagestart + fixoffset), "identifier"] = ident
-                    filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
-                                     (filtered_raw.time <= imagestart + fixoffset), "invalid"] = int(invalidity.iloc[0])
 
         try:
             assert np.sum(corpus_data_noNaN[corpus_data_noNaN.imageno == image].sacdur) == np.sum(
