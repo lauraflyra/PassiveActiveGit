@@ -237,39 +237,54 @@ def add_contrast_invalid(df_upsampled):
     # Here if the length of idx_invalid is zero, it doesn't even enter the loop
     for i in range(len(idx_invalid)):
         begin_invalid, end_invalid = idx_invalid[i][0], idx_invalid[i][-1]
-        duration_invalid = end_invalid - begin_invalid
-        if duration_invalid/2 > n_t_steps:
-            # If the whole duration of the invalid interval is bigger than 200ms, we want to have a plateau
-            # in the middle, where contrast is set to zero.
+        duration_invalid = end_invalid - begin_invalid + 1
 
-            # Fit a Gaussian cdf to the contrast there. Gaussian is assumed to have mean = 50ms and
-            # std = 50/3
-            x_cdf_down = np.linspace(0, max_ramp, n_t_steps)
-            # -norm and +1 are used to get contrast ramping from 1 down to 0
+        index_want = df_upsampled[(df_upsampled.invalid == 1)][begin_invalid:end_invalid + 1].index
+
+        #check if the last index from the interval is also the last time stamp from that trial
+        last_index = df_upsampled.loc[index_want[-1]].time
+        last_time = df_upsampled.time[-1]
+        #if they are equal, I don't ramp up the contrast, I only ramp it down
+        if last_index == last_time:
+            x_cdf_down = np.linspace(0, max_ramp, np.min([duration_invalid,n_t_steps]))
             contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
-
-            plateau = np.zeros(duration_invalid - 2 * n_t_steps)
-
-            x_cdf_up = np.linspace(max_ramp, 2 * max_ramp, n_t_steps)
-            # here a cdf ramps contrast from 0 back to 1, mean is adjusted such that we have a cdf for
-            # values between 100 and 200ms.
-            contrast_cdf_up = norm(loc=50 + max_ramp, scale=50 / 3).cdf(x_cdf_up)
-
-            contrast_temp = np.append(contrast_cdf_down, plateau)
-            contrast_invalid = np.append(contrast_temp, contrast_cdf_up)
-            assert (len(contrast_invalid) == duration_invalid)
+            if duration_invalid > n_t_steps:
+                plateau = np.zeros(duration_invalid - n_t_steps)
+                contrast_invalid = np.append(contrast_cdf_down, plateau)
+            else:
+                contrast_invalid = contrast_cdf_down
         else:
-            # if the whole duration of the invalid interval is smaller than 200ms, we don't need a plateau.
+            if duration_invalid/2 > n_t_steps:
+                # If the whole duration of the invalid interval is bigger than 200ms, we want to have a plateau
+                # in the middle, where contrast is set to zero.
 
-            x_cdf_down = np.linspace(0, max_ramp, int(duration_invalid / 2))
-            contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
+                # Fit a Gaussian cdf to the contrast there. Gaussian is assumed to have mean = 50ms and
+                # std = 50/3
+                x_cdf_down = np.linspace(0, max_ramp, n_t_steps)
+                # -norm and +1 are used to get contrast ramping from 1 down to 0
+                contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
 
-            x_cdf_up = np.linspace(max_ramp, 2 * max_ramp, duration_invalid - len(x_cdf_down))
-            contrast_cdf_up = norm(loc=50 + max_ramp, scale=50 / 3).cdf(x_cdf_up)
-            contrast_invalid = np.append(contrast_cdf_down, contrast_cdf_up)
+                plateau = np.zeros(duration_invalid - 2 * n_t_steps)
+
+                x_cdf_up = np.linspace(max_ramp, 2 * max_ramp, n_t_steps)
+                # here a cdf ramps contrast from 0 back to 1, mean is adjusted such that we have a cdf for
+                # values between 100 and 200ms.
+                contrast_cdf_up = norm(loc=50 + max_ramp, scale=50 / 3).cdf(x_cdf_up)
+
+                contrast_temp = np.append(contrast_cdf_down, plateau)
+                contrast_invalid = np.append(contrast_temp, contrast_cdf_up)
+                assert (len(contrast_invalid) == duration_invalid)
+            else:
+                # if the whole duration of the invalid interval is smaller than 200ms, we don't need a plateau.
+
+                x_cdf_down = np.linspace(0, max_ramp, int(duration_invalid / 2))
+                contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
+
+                x_cdf_up = np.linspace(max_ramp, 2 * max_ramp, duration_invalid - len(x_cdf_down))
+                contrast_cdf_up = norm(loc=50 + max_ramp, scale=50 / 3).cdf(x_cdf_up)
+                contrast_invalid = np.append(contrast_cdf_down, contrast_cdf_up)
 
 
-        index_want = df_upsampled[(df_upsampled.invalid == 1)][begin_invalid:end_invalid].index
         df_upsampled.loc[(df_upsampled.invalid == 1) &
                          (df_upsampled.index.isin(index_want)), "contrast"] = contrast_invalid
 
