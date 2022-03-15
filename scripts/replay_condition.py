@@ -8,6 +8,10 @@ import pandas as pd
 from scipy import signal
 from scipy import interpolate
 from scipy.optimize import curve_fit
+from scipy.stats import norm
+from itertools import groupby
+from operator import itemgetter
+import matplotlib.pyplot as plt
 
 
 # both savgol and upsampling need to be applied for every image and every participant
@@ -196,3 +200,77 @@ def add_contrast(df_upsampled):
                              (df_upsampled.is_saccade == 1) & (df_upsampled.invalid == 0),
                              "contrast"] = contrast_valid
         return df_upsampled
+
+
+def add_contrast_invalid(df_upsampled):
+    """
+    REMEMBER: df_upsampled is one image for one participant!
+    Add contrast column, with ramping contrast during invalid saccades and fixations.
+
+    For invalid saccades and fixations, a Gaussian CDF is fitted. We consider mean 50 and std = 50/3.
+    The contrast ramp in this case is limited to 100ms down or up.
+    For invalid intervals that last more than that, we keep the contrast at zero
+    in the middle.
+    :param df_upsampled: data frame containing colums x,y, invalid and TimeDeltaIndex. Already upsampled
+    to 1440Hz.
+    :return: data frame with one more column filled with appropriate contrast values for invalid saccades.
+    """
+    # contrast needs to be handled in two steps: First insert the contrast for the invalid saccades and
+    # fixations, then insert the contrast for the remaining saccades.
+
+    contrast = np.ones(len(df_upsampled))
+    df_upsampled.insert(7, "contrast", contrast)
+    # In order to fit the Gaussian cdf to the invalid sections we need:
+    # we want to get a ramp that lasts 100ms to go up or down
+    max_ramp = 100
+    # get the number of time steps that correspond to 100ms
+    n_t_steps = int(max_ramp / dt)
+
+
+    # First: get the indexes of all invalid time stamps
+    invalid_stamps = np.where(df_upsampled[df_upsampled.invalid == 1].time.diff().fillna(1) <= 1)[0]
+    # Second: get a list where the indexes are grouped in sequences of consecutive numbers
+    idx_invalid = []
+    for k, g in groupby(enumerate(invalid_stamps), lambda ix: ix[0] - ix[1]):
+        idx_invalid.append(list((map(itemgetter(1), g))))
+
+    # Here if the length of idx_invalid is zero, it doesn't even enter the loop
+    for i in range(len(idx_invalid)):
+        begin_invalid, end_invalid = idx_invalid[i][0], idx_invalid[i][-1]
+        duration_invalid = end_invalid - begin_invalid
+        if duration_invalid/2 > n_t_steps:
+            # If the whole duration of the invalid interval is bigger than 200ms, we want to have a plateau
+            # in the middle, where contrast is set to zero.
+
+            # Fit a Gaussian cdf to the contrast there. Gaussian is assumed to have mean = 50ms and
+            # std = 50/3
+            x_cdf_down = np.linspace(0, max_ramp, n_t_steps)
+            # -norm and +1 are used to get contrast ramping from 1 down to 0
+            contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
+
+            plateau = np.zeros(duration_invalid - 2 * n_t_steps)
+
+            x_cdf_up = np.linspace(max_ramp, 2 * max_ramp, n_t_steps)
+            # here a cdf ramps contrast from 0 back to 1, mean is adjusted such that we have a cdf for
+            # values between 100 and 200ms.
+            contrast_cdf_up = norm(loc=50 + max_ramp, scale=50 / 3).cdf(x_cdf_up)
+
+            contrast_temp = np.append(contrast_cdf_down, plateau)
+            contrast_invalid = np.append(contrast_temp, contrast_cdf_up)
+            assert (len(contrast_invalid) == duration_invalid)
+        else:
+            # if the whole duration of the invalid interval is smaller than 200ms, we don't need a plateau.
+
+            x_cdf_down = np.linspace(0, max_ramp, int(duration_invalid / 2))
+            contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
+
+            x_cdf_up = np.linspace(max_ramp, 2 * max_ramp, duration_invalid - len(x_cdf_down))
+            contrast_cdf_up = norm(loc=50 + max_ramp, scale=50 / 3).cdf(x_cdf_up)
+            contrast_invalid = np.append(contrast_cdf_down, contrast_cdf_up)
+
+
+        index_want = df_upsampled[(df_upsampled.invalid == 1)][begin_invalid:end_invalid].index
+        df_upsampled.loc[(df_upsampled.invalid == 1) &
+                         (df_upsampled.index.isin(index_want)), "contrast"] = contrast_invalid
+
+    return df_upsampled
