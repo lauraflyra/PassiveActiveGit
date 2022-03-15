@@ -196,7 +196,7 @@ def add_sacc_val_id(filtered_raw, corpus_data):
 
             else:
                 # This else handles assigning saccades and invalidity
-                invalidity = int(corpus_data[(corpus_data.imageno == image) & (corpus_p1.fixno == fix)].fixinvalid)
+                invalidity = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixinvalid)
                 ident = "" + str(subject).zfill(3) + str(trialno).zfill(3) + str(int(fix)).zfill(2) + ""
                 fixonset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixonset)
                 # necessary if because in the corpus data their time starts at 1.
