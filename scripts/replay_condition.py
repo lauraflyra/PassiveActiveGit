@@ -12,6 +12,7 @@ from scipy.stats import norm
 from itertools import groupby
 from operator import itemgetter
 import matplotlib.pyplot as plt
+import warnings
 
 
 # both savgol and upsampling need to be applied for every image and every participant
@@ -57,8 +58,8 @@ def upsampling(df):
 
     time_resampled = df_final.index.to_numpy(dtype=float) * 1e-9
 
-    f_interpol_x = interpolate.interp1d(time_original, x_original)
-    f_interpol_y = interpolate.interp1d(time_original, y_original)
+    f_interpol_x = interpolate.interp1d(time_original, x_original, fill_value="extrapolate")
+    f_interpol_y = interpolate.interp1d(time_original, y_original, fill_value="extrapolate")
 
     x_resampled = f_interpol_x(time_resampled)
     y_resampled = f_interpol_y(time_resampled)
@@ -117,10 +118,9 @@ def norm_inverse_gauss(x, mean=100, std=35):
     return NormalizeData(-(1 / (np.sqrt(2 * np.pi * std ** 2))) * (np.exp(-(x - mean) ** 2 / (2 * std ** 2))))
 
 
-def add_contrast(df_upsampled):
+def add_contrast_valid(df):
     """
-    Add contrast column, with ramping contrast during saccades and invalid fixations. For valid
-    saccades, the contrast ramp is calculated in steps:
+    Add contrast column, with ramping contrast during valid saccades. Here, the contrast ramp is calculated in steps:
     1. Put position into position deltas
     2. Fit a Gumbel CDF to it
     3. Take the derivative of the fitted data.
@@ -128,68 +128,63 @@ def add_contrast(df_upsampled):
     For invalid saccades and fixations, a Gaussian is fitted. The contrast ramp in this case is limited
     to 100ms down or up. For invalid intervals that last more than that, we keep the contrast at zero
     in the middle.
-    :param df_upsampled: data frame containing colums x,y, invalid and TimeDeltaIndex. Already upsampled
+    :param df: data frame containing colums x,y, invalid and TimeDeltaIndex. Already upsampled
     to 1440Hz.
-    :return: data frame with one more column filled with appropriate contrast values.
+    :return: data frame with one more column filled with appropriate contrast values for the valid saccades.
     """
     # contrast needs to be handled in two steps: First insert the contrast for the invalid saccades and
     # fixations, then insert the contrast for the remaining saccades.
-
+    df_upsampled = df.copy()
     contrast = np.ones(len(df_upsampled))
-    df_upsampled.insert(7, "contrast", contrast)
+
+    try:
+        df_upsampled.insert(7, "contrast", contrast)
+    except:
+        pass
 
     ident = np.unique(np.asarray(df_upsampled.identifier))
 
-    # In order to fit the Gaussian to the invalid sections we need:
-    mean = 100
-    std = 35
-    # get the number of time steps that correspond to 100ms
-    n_t_steps = int(mean / dt)
+    warnings.filterwarnings('ignore')
 
-    for ids in ident:
-        df_temp = df_upsampled[(df_upsampled.identifier == ids) & (df_upsampled.invalid == 1)]
-        if len(df_temp) > 0:
-            start = df_temp.index[0]
-            end = df_temp.index[-1]
-            dur_invalid = (end - start).total_seconds() * 1e3  # duration of invalid interval in ms
-            # we need to check if this is bigger than 200ms
-            tot_t_steps = len(df_temp)  # get the total number of invalid time steps
-
-            if dur_invalid / 2 > mean:
-                x_gauss_down = np.linspace(0, mean, n_t_steps)
-                contrast_gauss = norm_inverse_gauss(x_gauss_down, mean, std)
-                plateau = np.zeros(tot_t_steps - 2 * n_t_steps)
-                x_gauss_up = np.linspace(mean, 2 * mean, n_t_steps)
-                contrast_gauss_up = norm_inverse_gauss(x_gauss_up, mean, std)
-                contrast_temp = np.append(contrast_gauss, plateau)
-                contrast_invalid = np.append(contrast_temp, contrast_gauss_up)
-                assert (len(contrast_invalid) == tot_t_steps)
-            else:
-                x_gauss = np.linspace(0, 200, tot_t_steps)
-                contrast_invalid = norm_inverse_gauss(x_gauss, mean, std)
-
-            df_upsampled.loc[(df_upsampled.identifier == ids) & (df_upsampled.invalid == 1),
-                             "contrast"] = contrast_invalid
-
-    # Now we loop over ids again, but this time for the valid saccades
-
-
-###################################
-    # maybe I need to separate this into two functions!
-    # also need to find a way to handle when the parameters are not found.
-    for ids in ident:
+    params = []
+    sacc_durations = []
+    for count,ids in enumerate(ident):
         df_valid = df_upsampled[(df_upsampled.identifier == ids) &
                                 (df_upsampled.is_saccade == 1) & (df_upsampled.invalid == 0)]
-        print(ids)
         if len(df_valid) > 0:
-            print("in")
             tot_val_steps = len(df_valid)
             delta_df = delta_position(df_valid)
-            delta_df = delta_df / np.max(delta_df) # make the delta df be between 0 and 1
+            delta_df = delta_df / np.max(delta_df)
             t_delta = np.asarray(delta_df.index.total_seconds()) * 1e3  # time in ms
             t_delta = t_delta - t_delta[0]
+            sacc_durations.append(t_delta[-1])
+
+            # we need to chose initial guesses for our t0 and b
+            # for that we do a gridsearch, getting the Gumbel to every possible combination
+            # and then doing the residuals squared sum
+            # Empirically it looked ok to:
+            # 1. Vary t0 initial value from 1/4 to 3/4 of the saccade duration.
+            # 2. Vary b from 1/saccade_duration to saccade_duration/2
+            t0_range = np.linspace(t_delta[-1] / 4, 3 * t_delta[-1] / 4)
+            b_range = np.linspace(1 / t_delta[-1], t_delta[-1] / 2)
+            tt, bb = np.meshgrid(t0_range, b_range, sparse=True)
+
+            gumbel_meshed = []
+            for t in t_delta:
+                zz = func_Gumbel(t, tt, bb)
+                gumbel_meshed.append(zz)
+
+            gumbel_meshed = np.asarray(gumbel_meshed)
+            residuals = np.sum((gumbel_meshed - delta_df[:, np.newaxis, np.newaxis]) ** 2, axis=0)
+
+            # we take as initial conditions the combination that has minimum residual
+            idx_min = np.unravel_index(np.argmin(residuals, axis=None), residuals.shape)
+            t0_initial = tt[0, idx_min[0]]
+            b_initial = bb[idx_min[1], 0]
+
             # fit Gumbel CDF
-            popt_Gumbel, _ = curve_fit(func_Gumbel, t_delta, delta_df)
+            popt_Gumbel, _ = curve_fit(func_Gumbel, t_delta, delta_df, p0=[t0_initial, b_initial])
+            params.append(popt_Gumbel)
             # Normalize the derivative after inverting
             contrast_valid = NormalizeData(-np.diff(func_Gumbel(t_delta, *popt_Gumbel)))
             contrast_valid = np.concatenate((contrast_valid, [1]))
@@ -199,27 +194,32 @@ def add_contrast(df_upsampled):
             df_upsampled.loc[(df_upsampled.identifier == ids) &
                              (df_upsampled.is_saccade == 1) & (df_upsampled.invalid == 0),
                              "contrast"] = contrast_valid
-        return df_upsampled
+
+    return df_upsampled
 
 
-def add_contrast_invalid(df_upsampled):
+def add_contrast_invalid(df):
     """
-    REMEMBER: df_upsampled is one image for one participant!
+    REMEMBER: df is one image for one participant!
     Add contrast column, with ramping contrast during invalid saccades and fixations.
 
     For invalid saccades and fixations, a Gaussian CDF is fitted. We consider mean 50 and std = 50/3.
     The contrast ramp in this case is limited to 100ms down or up.
     For invalid intervals that last more than that, we keep the contrast at zero
     in the middle.
-    :param df_upsampled: data frame containing colums x,y, invalid and TimeDeltaIndex. Already upsampled
+    :param df: data frame containing colums x,y, invalid and TimeDeltaIndex. Already upsampled
     to 1440Hz.
     :return: data frame with one more column filled with appropriate contrast values for invalid saccades.
     """
     # contrast needs to be handled in two steps: First insert the contrast for the invalid saccades and
     # fixations, then insert the contrast for the remaining saccades.
 
+    df_upsampled = df.copy()
     contrast = np.ones(len(df_upsampled))
-    df_upsampled.insert(7, "contrast", contrast)
+    try:
+        df_upsampled.insert(7, "contrast", contrast)
+    except:
+        pass
     # In order to fit the Gaussian cdf to the invalid sections we need:
     # we want to get a ramp that lasts 100ms to go up or down
     max_ramp = 100
@@ -241,10 +241,10 @@ def add_contrast_invalid(df_upsampled):
 
         index_want = df_upsampled[(df_upsampled.invalid == 1)][begin_invalid:end_invalid + 1].index
 
-        #check if the last index from the interval is also the last time stamp from that trial
+        # check if the last index from the interval is also the last time stamp from that trial
         last_index = df_upsampled.loc[index_want[-1]].time
         last_time = df_upsampled.time[-1]
-        #if they are equal, I don't ramp up the contrast, I only ramp it down
+        # if they are equal, I don't ramp up the contrast, I only ramp it down
         if last_index == last_time:
             x_cdf_down = np.linspace(0, max_ramp, np.min([duration_invalid,n_t_steps]))
             contrast_cdf_down = -norm(loc=50, scale=50 / 3).cdf(x_cdf_down) + 1
