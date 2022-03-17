@@ -175,41 +175,60 @@ def add_sacc_val_id(filtered_raw, corpus_data):
         trialno = corpus_data[corpus_data.imageno == image].trialno.iloc[0]
         fix_nbs = corpus_data[(corpus_data.imageno == image)].fixno
         for count, fix in enumerate(fix_nbs):
+            if math.isnan(fix):
+                #this is to make sure that fixations that have NaNs have the id
+                #corresponding to the saccade in that same row and are invalid/valid
+                #for the duration of that saccade
+                c_temp = corpus_data[corpus_data.imageno==image].copy()
+                sacno = c_temp[np.logical_not(c_temp.fixno.notnull())].sacno.iloc[0]
+                saconset = c_temp[np.logical_not(c_temp.fixno.notnull())].saconset.iloc[0]
+                sacoffset = c_temp[np.logical_not(c_temp.fixno.notnull())].sacoffset.iloc[0]
+                if saconset == 1:
+                    saconset = 0
+                invalidity = 1
+                ident = ""+str(subject).zfill(3)+str(trialno).zfill(3)+str(int(sacno)).zfill(2)+""
+                filtered_raw.loc[(filtered_raw.time >= imagestart+saconset) &
+                             (filtered_raw.time <= imagestart+sacoffset), "identifier"]=ident
+                filtered_raw.loc[(filtered_raw.time >= imagestart+saconset) &
+                             (filtered_raw.time <= imagestart+sacoffset), "invalid"]=int(invalidity)
 
-            # This handles assigning saccades and invalidity
-            invalidity = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixinvalid)
-            ident = "" + str(subject).zfill(3) + str(trialno).zfill(3) + str(int(fix)).zfill(2) + ""
-            fixonset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixonset)
-            # necessary if because in the corpus data their time starts at 1.
-            if fixonset == 1:
-                fixonset = 0
-            fixoffset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixoffset)
-            filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
-                             (filtered_raw.time <= imagestart + fixoffset), "is_saccade"] = 0
-            filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
-                             (filtered_raw.time <= imagestart + fixoffset), "invalid"] = invalidity
-
-            # This handles assigning ids
-            # For everything except the last fixation/saccade pair
-            if count < len(corpus_data[(corpus_data.imageno == image)].fixno) - 1:
-                next_fix = int(corpus_data[(corpus_data.imageno == image)].fixno.iloc[count + 1])
-                next_fixonset = int(
-                    corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == next_fix)].fixonset)
-                filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
-                                 (filtered_raw.time < imagestart + next_fixonset), "identifier"] = ident
 
 
             else:
-                # Either the trial ends in a fixation or in a saccade, this needs to be considered
-                # when assigning the ids
-                try:
-                    end = int(corpus_data[(corpus_data.imageno == image)
-                                          & (corpus_data.sacno == fix)].sacoffset)
-                except:
-                    end = fixoffset
-
+                # This handles assigning saccades and invalidity
+                invalidity = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixinvalid)
+                ident = "" + str(subject).zfill(3) + str(trialno).zfill(3) + str(int(fix)).zfill(2) + ""
+                fixonset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixonset)
+                # necessary if because in the corpus data their time starts at 1.
+                if fixonset == 1:
+                    fixonset = 0
+                fixoffset = int(corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == fix)].fixoffset)
                 filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
-                                 (filtered_raw.time <= imagestart + end), "identifier"] = ident
+                                 (filtered_raw.time <= imagestart + fixoffset), "is_saccade"] = 0
+                filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
+                                 (filtered_raw.time <= imagestart + fixoffset), "invalid"] = invalidity
+
+                # This handles assigning ids
+                # For everything except the last fixation/saccade pair
+                if count < len(corpus_data[(corpus_data.imageno == image)].fixno) - 1:
+                    next_fix = int(corpus_data[(corpus_data.imageno == image)].fixno.iloc[count + 1])
+                    next_fixonset = int(
+                        corpus_data[(corpus_data.imageno == image) & (corpus_data.fixno == next_fix)].fixonset)
+                    filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
+                                     (filtered_raw.time < imagestart + next_fixonset), "identifier"] = ident
+
+
+                else:
+                    # Either the trial ends in a fixation or in a saccade, this needs to be considered
+                    # when assigning the ids
+                    try:
+                        end = int(corpus_data[(corpus_data.imageno == image)
+                                              & (corpus_data.sacno == fix)].sacoffset)
+                    except:
+                        end = fixoffset
+
+                    filtered_raw.loc[(filtered_raw.time >= imagestart + fixonset) &
+                                     (filtered_raw.time <= imagestart + end), "identifier"] = ident
 
         try:
             assert np.sum(corpus_data_noNaN[corpus_data_noNaN.imageno == image].sacdur) == np.sum(
