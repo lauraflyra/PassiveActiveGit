@@ -188,7 +188,6 @@ def add_contrast_valid_apparent_case(df):
             t_delta = np.asarray(delta_df.index.total_seconds()) * 1e3  # time in ms
             t_delta = t_delta - t_delta[0]
 
-
             # we need to chose initial guesses for our t0 and b
             # for that we do a gridsearch, getting the Gumbel to every possible combination
             # and then doing the residuals squared sum
@@ -219,10 +218,13 @@ def add_contrast_valid_apparent_case(df):
                 try:
                     # fit Gumbel CDF
                     popt_Gumbel, _ = curve_fit(func_Gumbel, t_delta, delta_df, p0=[t0_initial, b_initial])
+                    if np.any(popt_Gumbel > 1e2):
+                        raise OptimizeWarning
+
                     params.append(popt_Gumbel)
                     sacc_durations.append(t_delta[-1])
                     # Normalize the derivative after inverting
-                    contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, *popt_Gumbel)),a=0,b=0.999998)
+                    contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, *popt_Gumbel)), a=0, b=0.999998)
                     contrast_valid = np.concatenate((contrast_valid, [0.999999]))
 
                 except OptimizeWarning:
@@ -230,18 +232,16 @@ def add_contrast_valid_apparent_case(df):
                     try:
                         idx_nearest = find_nearest(sacc_durations, last_sacc_duration)
                         approx_gumbel_params = params[idx_nearest]
-                        contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, *approx_gumbel_params)), a=0, b=0.999998)
+                        contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, *approx_gumbel_params)), a=0,
+                                                           b=0.999998)
                         contrast_valid = np.concatenate((contrast_valid, [0.999999]))
 
                     except ValueError:
+
                         # If there's nothing to find, we just go with the initial guesses.
                         contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, t0_initial, b_initial)), a=0,
                                                            b=0.999998)
                         contrast_valid = np.concatenate((contrast_valid, [0.999999]))
-
-
-
-
 
             assert (len(contrast_valid) == tot_val_steps)
 
@@ -262,6 +262,7 @@ def add_contrast_valid_apparent_case(df):
 
             end_x = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp + 1].x[0]
             end_y = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp + 1].y[0]
+
 
             timestamp_zero_contrast = int(df_upsampled[(df_upsampled.is_saccade == 1) &
                                                        (df_upsampled.identifier == ids) & (df_upsampled.invalid == 0) &

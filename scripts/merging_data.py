@@ -222,8 +222,9 @@ def add_sacc_val_id(filtered_raw, corpus_data):
                     # Either the trial ends in a fixation or in a saccade, this needs to be considered
                     # when assigning the ids
                     try:
+                        last_sacc_no = np.asarray(corpus_data[(corpus_data.imageno == image)].sacno)[count]
                         end = int(corpus_data[(corpus_data.imageno == image)
-                                              & (corpus_data.sacno == fix)].sacoffset)
+                                              & (corpus_data.sacno == last_sacc_no)].sacoffset)
                     except:
                         end = fixoffset
 
