@@ -218,7 +218,7 @@ def add_contrast_valid_apparent_case(df):
                 try:
                     # fit Gumbel CDF
                     popt_Gumbel, _ = curve_fit(func_Gumbel, t_delta, delta_df, p0=[t0_initial, b_initial])
-                    if np.any(popt_Gumbel > 1e2):
+                    if np.any(popt_Gumbel>1e2) or np.any(popt_Gumbel < 1e-2):
                         raise OptimizeWarning
 
                     params.append(popt_Gumbel)
@@ -227,7 +227,7 @@ def add_contrast_valid_apparent_case(df):
                     contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, *popt_Gumbel)), a=0, b=0.999998)
                     contrast_valid = np.concatenate((contrast_valid, [0.999999]))
 
-                except OptimizeWarning:
+                except (OptimizeWarning,RuntimeError):
                     last_sacc_duration = t_delta[-1]
                     try:
                         idx_nearest = find_nearest(sacc_durations, last_sacc_duration)
@@ -235,6 +235,8 @@ def add_contrast_valid_apparent_case(df):
                         contrast_valid = NormalizeInterval(-np.diff(func_Gumbel(t_delta, *approx_gumbel_params)), a=0,
                                                            b=0.999998)
                         contrast_valid = np.concatenate((contrast_valid, [0.999999]))
+                        if (np.isnan(contrast_valid).any()):
+                            raise ValueError
 
                     except ValueError:
 
@@ -260,8 +262,12 @@ def add_contrast_valid_apparent_case(df):
             start_x = df_upsampled.loc[df_upsampled.time == first_saccade_timestamp - 1].x[0]
             start_y = df_upsampled.loc[df_upsampled.time == first_saccade_timestamp - 1].y[0]
 
-            end_x = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp + 1].x[0]
-            end_y = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp + 1].y[0]
+            try:
+                end_x = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp + 1].x[0]
+                end_y = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp + 1].y[0]
+            except IndexError:
+                end_x = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp].x[0]
+                end_y = df_upsampled.loc[df_upsampled.time == last_saccade_timestamp].y[0]
 
 
             timestamp_zero_contrast = int(df_upsampled[(df_upsampled.is_saccade == 1) &
