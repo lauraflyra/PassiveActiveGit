@@ -27,7 +27,8 @@ For each participant and each image we did:
   
   c) adding contrast ramps to invalid fixations/saccades. This is called the continuous condition and therefore we add a contrast_cont column to the dataframe. This is done with the add_contrast_invalid function, that fits a Gaussian CDF for invalid saccades and fixations. We consider mean 50 and std = 50/3. The contrast ramp in this case is limited to 100ms down or up. For invalid intervals that last more than that, we keep the contrast at zero in the middle.
   
-  d) adding contrast ramps to valid saccades. This is done by the function add_contrast_valid_apparent_case. The contrast ramp is calculated in steps: First we transform the position into position deltas, then we fit a Gumbel CDF to it, then we ake the derivative of the fitted data and finally we invert and normalize the profile encoutered.
+  d) adding contrast ramps to valid saccades. This is done by the function add_contrast_valid_apparent_case. The contrast ramp is calculated in steps: First we transform the position into position deltas, then we fit a Gumbel CDF to it, then we take the derivative of the fitted data and finally we invert and normalize the profile encoutered.
+  
    Changes in x,y are also performed such that in the first half of the contrast ramp we have x,y coordinates fixed to what they were before the beggining of the saccade. In the seccond half, the x,y coordinates are fixed to the fixation after the saccade ends. This is called the apparent condition and therefore we add a contrast_app column to the dataframe. Also we add columns x/y_apparent, corresponding to the modified x,y coordinates. 
   
   e) the data from all images that were presented to a participant is combined in a final dataframe, which is then saved in files '../separate_participant_data/Final_Data/data_subj_'+str(subject_number)+'.dat'
