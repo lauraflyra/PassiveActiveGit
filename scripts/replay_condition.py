@@ -35,12 +35,15 @@ def sav_gol(df, **kwargs):
 
 
 # 2. Upsample the data (by linear interpolation) to match our projector frequency of 1440Hz
-# Upsampling is now done with scipy.interpolate.interp1d,
-# that behaves better than pandas.resample.interpolate
+
 
 def upsampling(df):
     """
-
+    Upsample the data (by linear interpolation) to match our projector frequency of 1440Hz
+    Upsampling is done with scipy.interpolate.interp1d
+    :param df: data frame with columns x and y that are gonna be upsampled with linear interpolation.
+    All other columns are upsampled with the forward fill method.
+    :return: upsampled data frame.
     """
     df_time = df.set_index(pd.to_timedelta(df.index, unit='ms'))  # put the index as time in ms
 
