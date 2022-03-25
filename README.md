@@ -31,4 +31,6 @@ For each participant and each image we did:
   
    Changes in x,y are also performed such that in the first half of the contrast ramp we have x,y coordinates fixed to what they were before the beggining of the saccade. In the seccond half, the x,y coordinates are fixed to the fixation after the saccade ends. This is called the apparent condition and therefore we add a contrast_app column to the dataframe. Also we add columns x/y_apparent, corresponding to the modified x,y coordinates. 
   
-  e) the data from all images that were presented to a participant is combined in a final dataframe, which is then saved in files '../separate_participant_data/Final_Data/data_subj_'+str(subject_number)+'.dat'
+  e) the data from all images that were presented to a participant is combined in a final dataframe, which is then saved in files '../separate_participant_data/Final_Data/data_subj_'+str(subject_number)+'.dat'.
+  
+    Final data can be found in: https://osf.io/v2cdh/
