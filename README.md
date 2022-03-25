@@ -5,7 +5,7 @@ Using the Potsdam Search Corpus data, found in DOI 10.17605/OSF.IO/JQ56S, and it
 
 Parsing of the data was done in two steps:
 
-1. Functions in script merging_data.py were combined in the script iterating_files.ipynb. 
+1. Functions in script merging_data.py were combined in the script Iterating_files_v1.ipynb. 
 For each participant we did:
 
   a) get all valid time stamps, i.e, filter the times such that all times in the raw data are in between the imagestart and imageend times in the corpus data.
